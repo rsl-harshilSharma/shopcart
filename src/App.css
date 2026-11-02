@@ -253,9 +253,9 @@
 
 .shop-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) 300px 240px;
   align-items: start;
-  gap: 36px;
+  gap: 20px;
   padding-bottom: 58px;
 }
 
@@ -412,6 +412,50 @@
   border: 1px solid var(--line);
   border-radius: 4px;
   background: #fff;
+}
+
+.payment-panel {
+  position: sticky;
+  top: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+}
+
+.payment-panel h2 {
+  margin: 0;
+  font-family: Manrope, sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.payment-description {
+  margin: 11px 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.payment-status,
+.payment-error {
+  margin: 10px 0;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.payment-status {
+  color: var(--green);
+}
+
+.payment-error {
+  color: #a13e32;
+}
+
+.payment-action {
+  width: 100%;
+  margin-top: 6px;
 }
 
 .cart-panel-heading {
@@ -610,8 +654,17 @@
   }
 
   .shop-layout {
-    grid-template-columns: minmax(0, 1fr) 260px;
-    gap: 20px;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 18px;
+  }
+
+  .payment-panel {
+    position: static;
+    grid-column: 2;
+  }
+
+  .catalog {
+    grid-row: span 2;
   }
 }
 
@@ -681,6 +734,15 @@
   .cart-panel {
     position: static;
     grid-row: 1;
+  }
+
+  .payment-panel {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .catalog {
+    grid-row: 3;
   }
 
   .empty-cart {

@@ -1,5 +1,7 @@
 import { memo, useEffect, useState } from 'react'
+import { useSelector } from '@xstate/react'
 import { useCartStore, selectCartItemCount, selectCartTotal } from './state/cartStore'
+import { CheckoutProvider, useCheckoutActor } from './state/CheckoutActor'
 import type { CartItem, Product } from './types'
 import './App.css'
 
@@ -207,35 +209,27 @@ function CartTotal() {
   )
 }
 
-function CheckoutFeedback() {
-  const status = useCartStore((state) => state.checkoutStatus)
-  const error = useCartStore((state) => state.checkoutError)
+function CartErrorBanner() {
+  const actorRef = useCheckoutActor()
+  const error = useSelector(actorRef, (snapshot) => snapshot.context.error)
 
-  if (status === 'submitting') {
-    return <p className="checkout-message" role="status">Submitting your order…</p>
-  }
-  if (status === 'error') {
-    return <p className="checkout-message error-message" role="alert">{error ?? 'Order submission failed.'}</p>
-  }
-  if (status === 'success') {
-    return <p className="checkout-message" role="status">Order placed successfully.</p>
-  }
-  return null
+  if (!error) return null
+  return <p className="checkout-message error-message" role="alert">{error}</p>
 }
 
 function CheckoutButton() {
-  const itemCount = useCartStore(selectCartItemCount)
-  const status = useCartStore((state) => state.checkoutStatus)
-  const checkout = useCartStore((state) => state.checkout)
+  const actorRef = useCheckoutActor()
+  const canSubmit = useSelector(actorRef, (snapshot) => snapshot.can({ type: 'SUBMIT' }))
+  const isSubmitting = useSelector(actorRef, (snapshot) => snapshot.matches('submitting'))
 
   return (
     <button
       className="button button-primary checkout-button"
       type="button"
-      disabled={itemCount === 0 || status === 'submitting'}
-      onClick={() => void checkout()}
+      disabled={!canSubmit}
+      onClick={() => actorRef.send({ type: 'SUBMIT' })}
     >
-      {status === 'submitting' ? 'Placing order…' : 'Continue to checkout'}
+      {isSubmitting ? 'Processing payment…' : 'Continue to checkout'}
       <span aria-hidden="true">→</span>
     </button>
   )
@@ -248,46 +242,124 @@ function CartDrawer() {
       <CartItemsList />
       <CartTotal />
       <CheckoutButton />
-      <CheckoutFeedback />
+      <CartErrorBanner />
       <p className="secure-note">Shipping and taxes calculated at checkout</p>
     </aside>
   )
 }
 
+function PaymentPanel() {
+  const actorRef = useCheckoutActor()
+  const isReviewing = useSelector(actorRef, (snapshot) => snapshot.matches('reviewing'))
+  const isSubmitting = useSelector(actorRef, (snapshot) => snapshot.matches('submitting'))
+  const isSuccess = useSelector(actorRef, (snapshot) => snapshot.matches('success'))
+  const error = useSelector(actorRef, (snapshot) => snapshot.context.error)
+  const order = useSelector(actorRef, (snapshot) => snapshot.context.order)
+  const canSubmit = useSelector(actorRef, (snapshot) => snapshot.can({ type: 'SUBMIT' }))
+
+  return (
+    <section className="payment-panel" aria-labelledby="payment-title">
+      <p className="eyebrow">Secure checkout</p>
+      <h2 id="payment-title">Payment</h2>
+      <p className="payment-description">
+        {isReviewing && 'Your items are ready when you are.'}
+        {isSubmitting && 'Your payment is being processed securely.'}
+        {isSuccess && 'Your order has been confirmed.'}
+      </p>
+      {isSubmitting && <p className="payment-status" role="status">Processing payment…</p>}
+      {isSuccess && order && (
+        <p className="payment-status" role="status">
+          Order #{order.id} placed · {currency.format(order.total)}
+        </p>
+      )}
+      {error && <p className="payment-error" role="alert">{error}</p>}
+      {isSubmitting ? (
+        <button
+          className="button button-outline payment-action"
+          type="button"
+          onClick={() => actorRef.send({ type: 'CANCEL' })}
+        >
+          Cancel payment
+        </button>
+      ) : (
+        <button
+          className="button button-primary payment-action"
+          type="button"
+          disabled={!canSubmit}
+          onClick={() => actorRef.send({ type: 'SUBMIT' })}
+        >
+          {isSuccess ? 'Place another order' : 'Submit payment'}
+        </button>
+      )}
+    </section>
+  )
+}
+
+function CartSynchronizer() {
+  const actorRef = useCheckoutActor()
+
+  useEffect(() => {
+    actorRef.send({ type: 'CART_CHANGED', items: useCartStore.getState().items })
+    return useCartStore.subscribe((state) => {
+      actorRef.send({ type: 'CART_CHANGED', items: state.items })
+    })
+  }, [actorRef])
+
+  return null
+}
+
+function OrderCompletionBridge() {
+  const actorRef = useCheckoutActor()
+
+  useEffect(() => {
+    const subscription = actorRef.on('ORDER_COMPLETED', () => {
+      useCartStore.getState().clearCart()
+    })
+    return () => subscription.unsubscribe()
+  }, [actorRef])
+
+  return null
+}
+
 function App() {
   return (
-    <div className="app-shell">
-      <Header />
-      <main>
-        <section className="hero">
-          <div className="hero-copy">
-            <p className="eyebrow">The work-from-anywhere edit</p>
-            <h1>A little more<br />ease in your day.</h1>
-            <p>Everyday tools for the way you work, think, and create.</p>
-            <a className="button button-primary hero-cta" href="#catalog">
-              Explore the collection <span aria-hidden="true">↓</span>
-            </a>
+    <CheckoutProvider>
+      <CartSynchronizer />
+      <OrderCompletionBridge />
+      <div className="app-shell">
+        <Header />
+        <main>
+          <section className="hero">
+            <div className="hero-copy">
+              <p className="eyebrow">The work-from-anywhere edit</p>
+              <h1>A little more<br />ease in your day.</h1>
+              <p>Everyday tools for the way you work, think, and create.</p>
+              <a className="button button-primary hero-cta" href="#catalog">
+                Explore the collection <span aria-hidden="true">↓</span>
+              </a>
+            </div>
+            <div className="hero-art" aria-hidden="true">
+              <div className="hero-orbit orbit-one" />
+              <div className="hero-orbit orbit-two" />
+              <div className="hero-keyboard"><span /><span /><span /><span /><span /><span /><span /><span /><span /><span /><span /><span /></div>
+              <div className="hero-mouse" />
+              <span className="hero-sparkle sparkle-one">✳</span>
+              <span className="hero-sparkle sparkle-two">✳</span>
+            </div>
+            <span className="hero-index">01 / 04</span>
+          </section>
+          <div className="shop-layout">
+            <Catalog />
+            <CartDrawer />
+            <PaymentPanel />
           </div>
-          <div className="hero-art" aria-hidden="true">
-            <div className="hero-orbit orbit-one" />
-            <div className="hero-orbit orbit-two" />
-            <div className="hero-keyboard"><span /><span /><span /><span /><span /><span /><span /><span /><span /><span /><span /><span /></div>
-            <div className="hero-mouse" />
-            <span className="hero-sparkle sparkle-one">✳</span>
-            <span className="hero-sparkle sparkle-two">✳</span>
-          </div>
-          <span className="hero-index">01 / 04</span>
-        </section>
-        <div className="shop-layout">
-          <Catalog />
-          <CartDrawer />
-        </div>
-      </main>
-      <footer className="site-footer">
-        <span>ShopCart</span>
-        <span>Good tools. Better days.</span>
-      </footer>
-    </div>
+        </main>
+        <footer className="site-footer">
+          <span>ShopCart</span>
+          <span>Good tools. Better days.</span>
+        </footer>
+      </div>
+    </CheckoutProvider>
   )
 }
 
